@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isTeacher() {
+      return signedIn() && userRole() == 'teacher';
+    }
+
+    function isPrincipal() {
+      return signedIn() && userRole() == 'principal';
+    }
+
+    function isStaff() {
+      return isTeacher() || isPrincipal();
+    }
+
+    function validResultState() {
+      return request.resource.data.status in ['draft', 'submitted', 'published'];
+    }
+
+    function linkedStudent() {
+      let studentPath = /databases/$(database)/documents/students/$(request.resource.data.uid);
+      return exists(studentPath)
+        && get(studentPath).data.studentId == request.resource.data.studentId
+        && get(studentPath).data.cls == request.resource.data.cls;
+    }
+
+    function teacherClassIsDraft() {
+      let statusPath = /databases/$(database)/documents/classStatuses/$(request.resource.data.classStatusId);
+      return !exists(statusPath) || get(statusPath).data.status == 'draft';
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isPrincipal());
+      allow list: if isPrincipal();
+      allow create, update: if isPrincipal()
+        && request.resource.data.role in ['teacher', 'student', 'principal']
+        && request.resource.data.keys().hasOnly(['role', 'studentId', 'email', 'createdBy', 'createdAt'])
+        && (!('studentId' in request.resource.data) || request.resource.data.studentId is string)
+        && (!('email' in request.resource.data) || request.resource.data.email is string);
+      allow delete: if isPrincipal();
+    }
+
+    match /students/{studentUid} {
+      allow get, list: if isStaff() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['studentId', 'uid', 'name', 'cls'])
+        && request.resource.data.uid == studentUid
+        && request.resource.data.studentId is string
+        && request.resource.data.uid is string
+        && request.resource.data.name is string
+        && request.resource.data.cls is string;
+      allow delete: if isPrincipal();
+    }
+
+    match /results/{resultId} {
+      allow get, list: if isStaff() || (signedIn()
+        && resource.data.uid == request.auth.uid
+        && resource.data.status == 'published');
+      allow create: if linkedStudent() && ((isPrincipal() && validResultState())
+        || (isTeacher() && teacherClassIsDraft() && request.resource.data.status == 'draft'));
+      allow update: if linkedStudent() && ((isPrincipal() && validResultState())
+        || (isTeacher()
+          && teacherClassIsDraft()
+          && resource.data.status == 'draft'
+          && request.resource.data.status == 'draft'
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.studentId == resource.data.studentId
+          && request.resource.data.term == resource.data.term
+          && request.resource.data.session == resource.data.session));
+      allow delete: if isPrincipal();
+    }
+
+    match /classStatuses/{statusId} {
+      allow get, list: if isStaff();
+      allow create: if (isPrincipal() && request.resource.data.status in ['draft', 'submitted', 'published'])
+        || (isTeacher() && request.resource.data.status == 'submitted');
+      allow update: if (isPrincipal() && request.resource.data.status in ['draft', 'submitted', 'published'])
+        || (isTeacher()
+          && resource.data.status == 'draft'
+          && request.resource.data.status == 'submitted');
+      allow delete: if isPrincipal();
+    }
+
+    match /settings/{settingId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update, delete: if isPrincipal();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

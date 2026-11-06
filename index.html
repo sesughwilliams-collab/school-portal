@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Greenfield College – Results Portal</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<header><div class="crest">G</div><div><h1>Greenfield College</h1><small>Results Portal · <span class="sync" id="sync">sign in to connect</span></small></div><button id="out" style="display:none" onclick="logout()">Log out</button></header>
+<main id="app"></main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {createUserWithEmailAndPassword, getAuth, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {httpsCallable, getFunctions} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
+import {collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, query, setDoc, where, writeBatch} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+const config={apiKey:"AIzaSyARKNdqfPHtNLQxfu0mBK7LYjgjl-_LYe8",authDomain:"school-portal-8ed7d.firebaseapp.com",projectId:"school-portal-8ed7d",appId:"1:517125923776:web:11f3060c7a303446991e25"};
+const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app,"user"),functions=getFunctions(app);
+const wrapDoc=ref=>({_ref:ref,get:async()=>{const snapshot=await getDoc(ref);return {exists:snapshot.exists(),data:()=>snapshot.data()};},set:data=>setDoc(ref,data),delete:()=>deleteDoc(ref)});
+const wrapQuery=(path,constraints)=>({
+	where(field,operator,value){return wrapQuery(path,[...constraints,where(field,operator,value)]);},
+	limit(count){return wrapQuery(path,[...constraints,limit(count)]);},
+	async get(){const q=query(collection(db,path),...constraints);return getDocs(q);}
+});
+const firestore={
+	collection(path){
+		return {
+			doc(id){return wrapDoc(doc(db,path,id));},
+			get(){return getDocs(collection(db,path));},
+			where(field,operator,value){return wrapQuery(path,[where(field,operator,value)]);}
+		};
+	},
+	batch(){
+		const batch=writeBatch(db);
+		return {set(ref,data){batch.set(ref._ref,data);},delete(ref){batch.delete(ref._ref);},commit(){return batch.commit();}};
+	}
+};
+window.portalServices={
+	auth:{
+		get currentUser(){return auth.currentUser;},
+		createUserWithEmailAndPassword:(email,password)=>createUserWithEmailAndPassword(auth,email,password),
+		signInWithEmailAndPassword:(email,password)=>signInWithEmailAndPassword(auth,email,password),
+		signOut:()=>signOut(auth),
+		sendPasswordResetEmail:email=>sendPasswordResetEmail(auth,email),
+		sendEmailVerification:user=>sendEmailVerification(user)
+	},
+	profileDb:firestore,
+	functions,
+	callFunction:(name,data)=>httpsCallable(functions,name)(data)
+};
+window.dispatchEvent(new Event("firebase-ready"));
+</script>
+<script src="app.js?v=11"></script></body></html>
