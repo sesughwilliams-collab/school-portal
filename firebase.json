@@ -14,5 +14,17 @@
         "firebase-debug.*.log"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      ".firebaserc",
+      "firebase.json",
+      "firestore.rules",
+      "FIREBASE_SETUP.md",
+      "**/.*",
+      "**/node_modules/**",
+      "**/functions/**"
+    ]
+  }
 }
